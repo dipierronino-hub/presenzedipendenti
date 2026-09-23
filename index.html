@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestione Presenze Dipendenti</title>
+  <style>
+    :root {
+      --primary: #1e40af;
+      --primary-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --text: #0f172a;
+      --border: #e2e8f0;
+      --danger: #ef4444;
+      --success: #16a34a;
+    }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); margin: 0; padding: 24px; }
+    .container { max-width: 960px; margin: 0 auto; }
+    header { margin-bottom: 24px; }
+    h1 { margin: 0 0 6px 0; font-size: 1.6rem; color: #0f172a; }
+    p { margin: 0; color: #64748b; font-size: 0.95rem; }
+    
+    .card {
+      background: var(--surface);
+      border-radius: 10px;
+      padding: 22px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      margin-bottom: 24px;
+      border: 1px solid var(--border);
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      align-items: flex-end;
+    }
+    label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; color: #334155; }
+    input, select {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.95rem;
+      outline: none;
+    }
+    input:focus, select:focus { border-color: var(--primary); }
+    .btn {
+      padding: 10px 18px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.95rem;
+      transition: background 0.2s;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-success { background: var(--success); color: white; }
+    .btn-danger { background: var(--danger); color: white; padding: 5px 10px; font-size: 0.8rem; }
+
+    .actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
+    th { background: #f1f5f9; padding: 12px; color: #475569; font-weight: 600; border-bottom: 2px solid var(--border); }
+    td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tr:hover td { background: #f8fafc; }
+    .empty-state { text-align: center; padding: 30px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>Registro Presenze e Orario Dipendenti</h1>
+    <p>Inserisci gli orari di lavoro giornalieri ed esporta il riepilogo per la contabilità.</p>
+  </header>
+
+  <div class="card">
+    <form id="presenceForm">
+      <div class="form-grid">
+        <div>
+          <label for="nome">Nome Dipendente</label>
+          <input type="text" id="nome" placeholder="Es. Marco Rossi" required>
+        </div>
+        <div>
+          <label for="data">Data</label>
+          <input type="date" id="data" required>
+        </div>
+        <div>
+          <label for="ingresso">Ingresso</label>
+          <input type="time" id="ingresso" required>
+        </div>
+        <div>
+          <label for="uscita">Uscita</label>
+          <input type="time" id="uscita" required>
+        </div>
+        <div>
+          <label for="pausa">Pausa (minuti)</label>
+          <input type="number" id="pausa" value="0" min="0" step="5">
+        </div>
+        <div>
+          <button type="submit" class="btn btn-primary" style="width: 100%;">+ Registra</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="actions">
+      <h2 style="font-size: 1.2rem; margin: 0;">Presenze Registrate</h2>
+      <button id="exportBtn" class="btn btn-success">📥 Esporta per Excel (CSV)</button>
+    </div>
+
+    <table id="presenzeTable">
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Dipendente</th>
+          <th>Ingresso</th>
+          <th>Uscita</th>
+          <th>Pausa</th>
+          <th>Ore Lavorate</th>
+          <th>Azione</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <!-- Righe caricate da Javascript -->
+      </tbody>
+    </table>
+    <div id="emptyMsg" class="empty-state">Nessuna presenza ancora registrata.</div>
+  </div>
+</div>
+
+<script>
+  const form = document.getElementById('presenceForm');
+  const tableBody = document.getElementById('tableBody');
+  const emptyMsg = document.getElementById('emptyMsg');
+  const exportBtn = document.getElementById('exportBtn');
+
+  // Imposta la data odierna come default
+  document.getElementById('data').valueAsDate = new Date();
+
+  function loadRecords() {
+    return JSON.parse(localStorage.getItem('presenze_dipendenti') || '[]');
+  }
+
+  function saveRecords(records) {
+    localStorage.setItem('presenze_dipendenti', JSON.stringify(records));
+  }
+
+  function renderTable() {
+    const records = loadRecords();
+    tableBody.innerHTML = '';
+    
+    if (records.length === 0) {
+      emptyMsg.style.display = 'block';
+      return;
+    }
+    emptyMsg.style.display = 'none';
+
+    records.forEach((rec, index) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${rec.data}</strong></td>
+        <td>${rec.nome}</td>
+        <td>${rec.ingresso}</td>
+        <td>${rec.uscita}</td>
+        <td>${rec.pausa} min</td>
+        <td><strong>${rec.oreLavorate} h</strong></td>
+        <td><button class="btn btn-danger" onclick="eliminaRiga(${index})">Elimina</button></td>
+      `;
+      tableBody.appendChild(tr);
+    });
+  }
+
+  function calcolaOre(ingresso, uscita, pausaMinuti) {
+    const [hIn, mIn] = ingresso.split(':').map(Number);
+    const [hOut, mOut] = uscita.split(':').map(Number);
+
+    const minutiIn = hIn * 60 + mIn;
+    const minutiOut = hOut * 60 + mOut;
+
+    let diffMinuti = minutiOut - minutiIn - Number(pausaMinuti);
+    if (diffMinuti < 0) return "0.00";
+
+    const ore = Math.floor(diffMinuti / 60);
+    const min = diffMinuti % 60;
+    return `${ore}:${min < 10 ? '0' : ''}${min}`;
+  }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+
+    const nome = document.getElementById('nome').value.trim();
+    const data = document.getElementById('data').value;
+    const ingresso = document.getElementById('ingresso').value;
+    const uscita = document.getElementById('uscita').value;
+    const pausa = document.getElementById('pausa').value || 0;
+
+    const oreLavorate = calcolaOre(ingresso, uscita, pausa);
+
+    const record = { nome, data, ingresso, uscita, pausa, oreLavorate };
+    const records = loadRecords();
+    records.unshift(record); // Aggiunge in cima
+    saveRecords(records);
+
+    form.reset();
+    document.getElementById('data').valueAsDate = new Date();
+    document.getElementById('pausa').value = 0;
+    renderTable();
+  });
+
+  window.eliminaRiga = function(index) {
+    if (confirm("Vuoi eliminare questa registrazione?")) {
+      const records = loadRecords();
+      records.splice(index, 1);
+      saveRecords(records);
+      renderTable();
+    }
+  };
+
+  exportBtn.addEventListener('click', () => {
+    const records = loadRecords();
+    if (records.length === 0) {
+      alert("Nessun dato da esportare!");
+      return;
+    }
+
+    let csvContent = "\uFEFFData;Dipendente;Ingresso;Uscita;Pausa (min);Ore Totali\n";
+    records.forEach(r => {
+      csvContent += `${r.data};${r.nome};${r.ingresso};${r.uscita};${r.pausa};${r.oreLavorate}\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Presenze_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // Avvio
+  renderTable();
+</script>
+
+</body>
+</html>
